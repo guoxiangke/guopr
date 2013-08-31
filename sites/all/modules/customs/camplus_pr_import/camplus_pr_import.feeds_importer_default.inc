@@ -136,7 +136,7 @@ function camplus_pr_import_feeds_importer_default() {
             'unique' => FALSE,
           ),
           2 => array(
-            'source' => 'panel head',
+            'source' => 'panel_head',
             'target' => 'field_panel_head:label',
             'unique' => FALSE,
           ),

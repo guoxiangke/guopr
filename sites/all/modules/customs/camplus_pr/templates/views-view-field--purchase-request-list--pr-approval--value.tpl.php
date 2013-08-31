@@ -32,7 +32,7 @@ if(isset($g['cancel']) && $g['cancel']) $show = FALSE;
 	  $department_nid = $row->field_field_budget_items[0]['raw']['entity']->field_parents_department[LANGUAGE_NONE][0]['target_id'];
 	  //header变更，如果head没有group admin权限，不可以rate
 	  $og_roles = og_get_user_roles($group_type='node', $gid=$department_nid, $uid = NULL, $include = FALSE);
-	  if(in_array('panel head', $og_roles) && $show) {
+	  if(in_array('panel_head', $og_roles) && $show) {
 	      // $show_flag = FALSE;
 	  	print $output;
 	  }
