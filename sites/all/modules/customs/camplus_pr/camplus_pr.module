@@ -454,7 +454,7 @@ function camplus_pr_node_submit($node, $form, &$form_state) {
     $financial_year = substr($field_financial_year,0,4)-1;
     $financial_year_end = substr($field_financial_year,2,2);
     // $form_state['values']['field_pr_reference'][LANGUAGE_NONE][0]['value'] = variable_get('camplus_pr_no_pattern_prefix', 'PR').'-'.$financial_year .'/'. $financial_year_end ."-0000-".$node->nid;
-    $node->field_pr_reference[LANGUAGE_NONE][0]['value'] = variable_get('camplus_pr_no_pattern_prefix', 'PR').'-'.$financial_year .'/'. $financial_year_end ."-0000-".$node->nid;
+    $node->field_pr_reference[LANGUAGE_NONE][0]['value'] = variable_get('camplus_pr_no_pattern_prefix', 'PR').'-'.$financial_year .'/'. $financial_year_end ."-".$node->nid;
   // dpm($form_state,'form_state1');
   $fid = $form_state['input']['fgm_node_purchase_request_form_group_chosen']['fields']['items'][0]['field_pr_quotation_file'][LANGUAGE_NONE][0]['fid'];
   if($fid) {
