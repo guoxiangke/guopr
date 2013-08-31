@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Reservation Views feature.
+ */
+
+include_once 'reservation_views.features.inc';

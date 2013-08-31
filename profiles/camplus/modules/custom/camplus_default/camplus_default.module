@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Camplus Default feature.
+ */
+
+include_once 'camplus_default.features.inc';

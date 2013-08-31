@@ -1,0 +1,17 @@
+name = Camplus Print
+core = 7.x
+package = Camplus
+version = 7.x-1.0
+project = camplus_print
+dependencies[] = ctools
+dependencies[] = features
+dependencies[] = print
+dependencies[] = strongarm
+features[ctools][] = strongarm:strongarm:1
+features[features_api][] = api:2
+features[user_permission][] = access print
+features[variable][] = print_footer_options
+features[variable][] = print_html_link_pos
+features[variable][] = print_html_link_text
+features[variable][] = print_logo_options
+project path = sites/all/modules/customs

@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Camplus PR import feature.
+ */
+
+include_once 'camplus_pr_import.features.inc';

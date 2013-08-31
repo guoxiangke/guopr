@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Import Users feature.
+ */
+
+include_once 'import_users.features.inc';

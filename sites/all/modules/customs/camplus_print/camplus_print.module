@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Camplus Print feature.
+ */
+
+include_once 'camplus_print.features.inc';

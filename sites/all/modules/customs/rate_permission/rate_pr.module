@@ -1,0 +1,520 @@
+<?php
+
+/**
+ * Implements hook_node_view().
+ */
+function rate_pr_node_view($node, $view_mode, $langcode) {
+
+
+  if ($view_mode != 'rss' && $node->type == 'purchase_request') {
+
+    //标记paid后，不可以再rate了
+    $show_flag = TRUE;
+    $flags = flag_get_counts('node', $node->nid, $reset = FALSE);
+    if(isset($flags['paid']) && $flags['paid']) {
+       $show_flag = FALSE;
+    }
+    //header变更，如果head没有group admin权限，不可以rate
+    global $user;
+    if(in_array('head', $user->roles)) {
+      $BI_nid = $node->field_budget_items[LANGUAGE_NONE][0]['target_id'];
+      $department_nid = node_load($BI_nid)->field_parents_department[LANGUAGE_NONE][0]['target_id'];
+      $og_roles = og_get_user_roles($group_type='node', $gid=$department_nid, $uid = NULL, $include = FALSE);
+      if(!in_array('panel head', $og_roles)) {
+          $show_flag = FALSE;
+      }
+    }
+    //end header变更
+      
+    // Adding the form to the node view
+    $widgets = rate_get_active_widgets('node', $node->type, $view_mode);
+    foreach ($widgets as $widget_id => $widget) {
+      //没有权限时，清楚rate
+      $widget->id = $widget_id;
+      //一旦审核通过，所有审批部门角色不可更改即 not show rate.
+
+      if($widget->name == 'approve') {
+        $approve_status = _rate_pr_check_permissions($node,$widget);
+
+        $widget_name = 'rate_' . $widget->name;
+        if(!$approve_status['permit_flag'] || !$show_flag) {
+          // 根据PR节点的总额确定which审批流程
+          // 在上一个审批流程没有确定前 其他后续
+          if ($widget->node_display == RATE_DISPLAY_DISABLE) {
+            unset($node->$widget_name);
+          }
+          else {
+            unset($node->content[$widget_name]);
+          }
+        }
+        break;
+      }
+    }
+  //如果已经审核，或ing，不可编辑
+  }
+}
+
+/**
+ * //check approve workflow status:
+  //true false 
+  //status: approve_level=rid, approve_rang=0~4,  approve_status=Approve/Reject
+  //permit_flag:true false.
+  //status:true/false  means the PR finaly status.
+  //TODO: node/%/view not effective ,call many times.
+  //TODO: 效率是个问题！
+ */
+function _rate_pr_check_permissions($node, $widget, $user = NULL) {
+  if($node->type != 'purchase_request') return FALSE;
+  if(!$user) global $user;
+  global $debug;
+  $approve_status['flags'] = flag_get_counts('node', $node->nid, $reset = FALSE);
+  //确定角色和第几级审批设定
+  {
+    //第几级审批设定
+    //field_budget_items_amount
+    $field_chosen_price = 0;
+    foreach ($node->field_budget_items_amount[LANGUAGE_NONE]  as $amount) {
+      $field_chosen_price += $amount['value'];
+    }
+    // $field_chosen_price = $node->field_chosen_price[LANGUAGE_NONE][0]['value'];
+    $field_payment_from_students = $node->field_payment_from_students[LANGUAGE_NONE][0]['value'];
+    $total = $field_chosen_price + $field_payment_from_students;//3300
+    if($debug && $node->nid==544) dpm($total,'total');
+    $camplus_pr_range_settings = variable_get('camplus_pr_range_settings');
+    if($debug && $node->nid==544) dpm($camplus_pr_range_settings,'$camplus_pr_range_settings');
+    foreach ($camplus_pr_range_settings as $key => $value) {
+      if($value['end']-$total >= 0) {
+        $approve_rang = $key; //the $key+1 group settings.
+        break;
+      }
+    }
+    $approve_status['approve_rang'] = $approve_rang;
+    $workflow_settings = variable_get('camplus_pr_workflow_settings');
+    // if($debug) dpm($approve_rang,'approve_rang');
+    $workflow_settings = $workflow_settings[$approve_rang];
+    // if($debug) dpm($workflow_settings,'workflow_settings');
+    $rate_results = rate_get_results('node', $node->nid, $widget->id);
+    if($rate_results['options']['-1']) {   //attention -1,can not change.
+    //即有人选择reject，审核不通过
+      $approve_status['workflow_status'] = 'reject';
+      $approve_status['reject_counts'] = $rate_results['options']['-1'];
+      if($debug) dpm('审核不通过,即有人选择');
+    }elseif($rate_results['options']['1'] == count(array_filter($workflow_settings))) {//all choosed approve,审核通过
+      $approve_status['workflow_status'] = 'approved';
+      $approve_status['approved_counts'] = $rate_results['options']['1'];
+       if($debug) dpm('审核通过');
+    }else {//审核中
+      $approve_status['approved_counts'] = $rate_results['options']['1'];
+       $approve_status['workflow_status'] = 'pending';
+       if($debug) dpm('审核中42');
+    }
+    //确定角色
+    $camplus_pr_approvable_role_involved = array_keys(variable_get('camplus_pr_approvable_role_involved'));
+    $flag_role_involved = FALSE;
+    $role = FALSE;
+    $rid = FALSE;
+    foreach ($user->roles as $key => $value) {
+      if (in_array($value, $camplus_pr_approvable_role_involved)) {
+        $rid = $key;
+        $role = $value;
+        $flag_role_involved = TRUE;
+        break;
+      }
+    }
+    if($flag_role_involved){
+      $approve_status['approve_level'] = $rid;
+    }else{
+      //用户角色不在审核流程中，即无权限，返回false
+      $approve_status['permit_flag'] = $flag_role_involved; //false
+      return $approve_status;
+    }
+
+  }
+
+  //用户已经投票/审批过，即有权限
+  if(isset($rate_results['user_vote'])) {
+    $approve_status['status'] = $rate_results['user_vote'];
+    $approve_status['permit_flag'] = TRUE;
+    return $approve_status;
+  }else {//进一步判定 用户尚未投票/审批，且有相应角色，需要根据审核流程判断是否此时有资格看到rate
+    // dpm($workflow_settings);
+    $camplus_pr_approvable_role_weight = variable_get('camplus_pr_approvable_role_weight','');
+    // dpm($camplus_pr_approvable_role_weight);
+    // asort($camplus_pr_approvable_role_weight);
+    $camplus_pr_approvable_role_weight_flip = array_flip($camplus_pr_approvable_role_weight);
+    ksort($camplus_pr_approvable_role_weight_flip);
+    // dpm($camplus_pr_approvable_role_weight_flip);
+    $first_head = current($camplus_pr_approvable_role_weight_flip);//head first role, Department specific role. 
+    $first_roles = user_role_load_by_name($first_head);
+    //head: Department specific role. 需要判断是否属于该部门，即使IT部门的header吗？
+    if($role == $first_head) { //'head' usually the first level of approve.
+      //TODO: og check if user is the department head.
+      // og_get_memrship($group_type='node', $gid, $entity_type='node', $etid=$node->nid)
+      // $bi_nid = $node->og_group_ref[LANGUAGE_NONE][0]['target_id'];
+      $bi_nid = $node->field_budget_items[LANGUAGE_NONE][0]['target_id'];
+    
+      $department_nid = node_load($bi_nid)->field_parents_department[LANGUAGE_NONE][0]['target_id'];
+      $department_node = node_load($department_nid);
+      $flag_role_involved = $flag_role_involved && og_is_member('node', $department_nid, $entity_type = 'user', $user);
+      
+      $approve_status['permit_flag'] = $flag_role_involved;
+
+      if($debug) dvm($flag_role_involved,'true means the header is member of the right department has permission to vote');
+    }else { //if($role != $first_head)  // other roles, Non-Department specific.
+      if($debug) dpm($role,'my involed role '.$rid);
+      // $rid = user_role_load_by_name($role_name)->rid;
+      if($workflow_settings[$rid]) { //判定workflow是否设置该部门审核
+        if($rate_results['count'] == 0) {//no rates.
+          $approve_status['permit_flag'] = FALSE;
+          if($debug) dpm($role .' has no! right to check/approve AS the workflow settings,for no one before has rate.:没有权限审核，需等待之前的部门先审核。现在该PR没有任何人审核!');
+          return $approve_status;
+        }else {
+          //只要之前部门，有一个不同意，本部门将看不到rate
+          //之前部门，都同意，本部门才能看rate
+
+
+         
+          // delete the first role which is  Department specific
+
+          if($debug) dpm($camplus_pr_approvable_role_weight,'role_weight');
+          if($debug) dpm(array_filter($workflow_settings));
+          if($debug) dpm($first_roles,'fist');
+
+          $before_role_counts = 0;
+          foreach (array_filter($workflow_settings) as $w_rid => $value) {
+            if( $w_rid == $rid ){break;}
+              $before_role_counts ++;
+          }
+          $approve_status['before_role_counts'] = $before_role_counts;
+          $approve_status['approved_counts'] = $rate_results['options']['1'];
+          $approve_status['reject_counts'] = $rate_results['options']['-1'];
+          if($debug) dpm( $rid.' '.$role.' 上面还有'.$before_role_counts.'级部门&&已经有'.$rate_results['options']['1'].'个部门同意了。');
+          foreach (array_filter($workflow_settings) as $w_rid => $value) {
+            if($w_rid == $first_roles->rid) continue;
+            $other_roles = user_role_load($w_rid);
+            //之前部门
+            if ($camplus_pr_approvable_role_weight[$role] > $camplus_pr_approvable_role_weight[$other_roles->name]) {
+              if($debug) dpm( $rid.' '.$role.' 的上面还有de部门是 '.$w_rid .' '. $other_roles->name);
+              $approve_status['approve_level_before'] = array($w_rid=> $other_roles->name);
+              //只有1个，说明只要head部门审核了。
+              if($rate_results['count'] == 1) {
+                $approve_status['permit_flag'] = FALSE;
+                if($debug) dpm($role .' has no! right to check/approve AS the workflow settings,没有权限审核，需等待之前的部门先审核。现在该PR只有header审核guo!等待'.$other_roles->name.'审批');
+                return $approve_status;
+              }else {
+                //都选择同意&& 数量一致
+                if($rate_results['count'] == $rate_results['options']['1'] && $rate_results['count'] == $before_role_counts){
+                  // true
+                }else{
+                  $approve_status['permit_flag'] = FALSE;
+                  if($debug) dpm($role .' has no! right to check/approve AS the workflow settings,:没有权限审核，需等待之前的部门先审核!');
+                  return $approve_status;
+                }
+
+              }
+            }
+          }
+
+          if($debug) dpm($role .' has right to check/approve,,rate_results: '.$rate_results['count']);
+
+        }
+        //TODO: and then check others before has approve or not.
+
+
+      }else{
+        $approve_status['permit_flag'] = FALSE;
+        // $flag_role_involved = FALSE;
+        if($debug) dpm($role .' has no! right to check/approve AS the workflow settings????TODO');//没有在审核队列中
+        return $approve_status;
+      }
+    }
+
+    $approve_status['permit_flag'] = $flag_role_involved;
+    return $approve_status;
+  }
+}
+
+/**
+ * get the flag of Pr-Node approve rate-id
+ * @param $node the node which content type must be purchase_request
+ * @return $rate_id object the approve rate id
+ */
+function _camplus_pr_get_approve_rate($node) {
+  if($node->type != 'purchase_request') return FALSE;
+  $widgets = rate_get_active_widgets('node','purchase_request');// $node->type
+  foreach ($widgets as $widget_id => $widget) {
+    // 没有权限时，清楚rate
+    $widget->id = $widget_id;
+    if($widget->name == 'approve') {
+      return $widget;
+      break;
+    }
+  }
+  return FALSE;
+}
+// will delete
+function camplus_pr_get_vote($node, $account=NULL) {
+  global $user;
+  if(!$account) $account = $user;
+    //strtotime($field_financial_year);
+  $query = db_select('votingapi_vote', 'v')
+    ->fields('v', array('vote_id'))//nid
+    ->condition('v.entity_id',$node->nid)
+    ->condition('v.uid',$user->uid)
+    ->execute();
+  $result = $query->fetchCol();
+  $return = FALSE;
+  if(isset($result[0])) $return = TRUE;
+  return $return;
+}
+/**
+ * Implements hook_votingapi_insert().
+ */
+function rate_pr_votingapi_insert($votes) {
+//   $votes = Array
+// (
+//     [0] => Array
+//         (
+//             [entity_type] => node
+//             [entity_id] => 40
+//             [value_type] => option
+//             [value] => 1
+//             [tag] => vote
+//             [uid] => 20
+//             [timestamp] => 1368020396
+//             [vote_source] => 127.0.0.1
+//             [prepped] => 1
+//             [vote_id] => 47
+//         )
+
+// )
+
+  // 1|Draft
+  // 2|Locked
+  // 3|Pending
+  // 4|Approved
+  // 5|Rejected
+  // 6|Completed
+  // 7|Cancelled
+
+  $node = node_load($votes[0]['entity_id']);
+  if($votes[0]['value'] == 1) {//You voted 'Approve'.
+    //check pending or ???
+    //@see rate_pr.rules.inc
+    // $widget = _camplus_pr_get_approve_rate($node);
+    // if(!isset($widget->id)) return;
+    // $approve_status = _rate_pr_check_permissions($node,$widget);
+    // global $debug;
+    // if($debug) watchdog('ooooo', ''.print_r($approve_status,TRUE), $variables = array(), $severity = WATCHDOG_NOTICE, $link = NULL);
+    // //oh no ,didn't work. should do this after done.
+    // //http://drupal.org/project/voting_rules
+    // if($approve_status['workflow_status'] == 'approved') { //all approved.
+    //   $node->field_pr_status[LANGUAGE_NONE][0]['value'] = 4;
+    //   node_save($node);
+    // }
+    //field_pr_rid_after setting begin!
+      //0 5 header
+      //1 6 manager
+      //2 7 principal
+      //3 8 borad
+    $role_involved = unserialize($node->field_pr_role_involved[LANGUAGE_NONE][0]['value']);
+    $workflow_settings_node = array_filter($role_involved);
+    $workflow_settings_node = array_keys($workflow_settings_node);
+
+    watchdog('workflow_settings_node', 'workflow_settings_node <pre>'.print_r($workflow_settings_node,TRUE), array(), WATCHDOG_NOTICE, 'link');
+    // _rate_pr_check_permissions begin
+      if($node->type == 'purchase_request') {
+
+        if(isset($node->field_pr_status[LANGUAGE_NONE][0]['value']) && $node->field_pr_status[LANGUAGE_NONE][0]['value'] == 3) {
+          //check if all approved. if so ,change status to 4.
+          $widget = _camplus_pr_get_approve_rate($node);
+          if(!isset($widget->id)) return;
+          $approve_status = _rate_pr_check_permissions($node,$widget);
+        }
+      }
+    // _rate_pr_check_permissions end
+    watchdog('approve_status00000', '<pre>'.print_r($approve_status,TRUE), array(), WATCHDOG_NOTICE, 'link');
+    $next_rid = $workflow_settings_node[$approve_status['approved_counts']+1]?$workflow_settings_node[$approve_status['approved_counts']+1]:0;
+    $node->field_pr_rid_after[LANGUAGE_NONE][0]['value'] = $next_rid;//7
+    watchdog('field_pr_rid_after11111', $next_rid, array(), WATCHDOG_NOTICE, 'link');
+    node_save($node);
+  //field_pr_rid_after setting end!
+  }else {//You voted 'reject'.
+    $node->field_pr_status[LANGUAGE_NONE][0]['value'] = 5;
+    node_save($node);
+  }
+}
+
+/**
+ * Preprocess function for the yesno template.
+ * @see rate_preprocess_rate_template_yesno
+ */
+function rate_pr_preprocess_rate_template_yesno(&$variables) {
+  extract($variables);
+
+  $buttons = array();
+  foreach ($links as $link) {
+    $button = theme('rate_button', array('text' => $link['text'], 'href' => $link['href'], 'class' => 'rate-yesno-btn'));
+    $button .= $link['votes'];
+    $buttons[] = $button;
+  }
+  $variables['buttons'] = $buttons;
+
+  $info = array();
+  if ($mode == RATE_CLOSED) {
+    $info[] = t('Voting is closed.');
+  }
+  if ($mode != RATE_COMPACT && $mode != RATE_COMPACT_DISABLED) {
+    if (isset($results['user_vote'])) {
+      if($results['user_vote'] == 'Approve') {
+        $results['user_vote'] = 'Approved';
+      }else {
+        $results['user_vote'] = 'Rejected';
+      }
+      $info[] = t('@option by me', array('@option' => t($results['user_vote'])));
+    }
+  }
+  $variables['info'] = implode(' ', $info);
+}
+
+/**
+ * Implements hook_node_load().
+ * vote after solutions.
+ */
+  // 1|Draft
+  // 2|Locked
+  // 3|Pending
+  // 4|Approved
+  // 5|Rejected
+  // 6|Completed
+  // 7|Cancelled
+function rate_pr_node_load($nodes, $types) {
+   foreach ($nodes as $node) {
+    if($node->type == 'purchase_request') {
+
+      if(isset($node->field_pr_status[LANGUAGE_NONE][0]['value']) && $node->field_pr_status[LANGUAGE_NONE][0]['value'] == 3) {
+        //check if all approved. if so ,change status to 4.
+        $widget = _camplus_pr_get_approve_rate($node);
+        if(!isset($widget->id)) return;
+        $approve_status = _rate_pr_check_permissions($node,$widget);
+        //oh no ,didn't work. should do this after done.
+        //http://drupal.org/project/voting_rules
+        if($approve_status['workflow_status'] == 'approved') { //all approved.
+          // $node->field_pr_status[LANGUAGE_NONE][0]['value'] = 4;
+          // node_save($node); // or do_action
+          camplus_pr_status_update($node->vid,4);
+          // cache_clear_all($cid = NULL, $bin = NULL, $wildcard = FALSE);
+          drupal_flush_all_caches();
+        }
+      }
+    }
+
+   }
+}
+
+/**
+ * Implements hook_mail().
+ */
+function rate_pr_mail($key, &$message, $params) {
+    /*
+   *  $account = $params['account'];
+   *  $context = $params['context'];
+   *  $variables = array(
+   *    '%site_name' => variable_get('site_name', 'Drupal'),
+   *    '%username' => format_username($account),
+   *  );
+   *  if ($context['hook'] == 'taxonomy') {
+   *    $entity = $params['entity'];
+   *    $vocabulary = taxonomy_vocabulary_load($entity->vid);
+   *    $variables += array(
+   *      '%term_name' => $entity->name,
+   *      '%term_description' => $entity->description,
+   *      '%term_id' => $entity->tid,
+   *      '%vocabulary_name' => $vocabulary->name,
+   *      '%vocabulary_description' => $vocabulary->description,
+   *      '%vocabulary_id' => $vocabulary->vid,
+   *    );
+   *  }
+   *
+   *  // Node-based variable translation is only available if we have a node.
+   *  if (isset($params['node'])) {
+   *    $node = $params['node'];
+   *    $variables += array(
+   *      '%uid' => $node->uid,
+   *      '%node_url' => url('node/' . $node->nid, array('absolute' => TRUE)),
+   *      '%node_type' => node_type_get_name($node),
+   *      '%title' => $node->title,
+   *      '%teaser' => $node->teaser,
+   *      '%body' => $node->body,
+   *    );
+   *  }
+   *  $subject = strtr($context['subject'], $variables);
+   *  $body = strtr($context['message'], $variables);
+   *  $message['subject'] .= str_replace(array("\r", "\n"), '', $subject);
+   *  $message['body'][] = drupal_html_to_text($body);
+   */
+   /* Your code here */
+     global $user;
+
+  // Each message is associated with a language, which may or may not be the
+  // current user's selected language, depending on the type of e-mail being
+  // sent. This $options array is used later in the t() calls for subject
+  // and body to ensure the proper translation takes effect.
+  $options = array(
+    'langcode' => $message['language']->language,
+  );
+
+  switch ($key) {
+    // Send a simple message from the contact form.
+    case 'lock_email':
+      $message['subject'] = $params['subject']. ' is locked!';
+      // Note that the message body is an array, not a string.
+      // $message['body'][] = t('@name sent you the following message:', array('@name' => $user->name), $options);
+      // Because this is just user-entered text, we do not need to translate it.
+
+      // Since user-entered text may have unintentional HTML entities in it like
+      // '<' or '>', we need to make sure these entities are properly escaped,
+      // as the body will later be transformed from HTML to text, meaning
+      // that a normal use of '<' will result in truncation of the message.
+      $message['body'][] = check_plain($params['message']);
+      break;
+    // case 'email_to_next_role':
+    //   watchdog('email_to_next_role', 'email_to_next_role', array(), WATCHDOG_NOTICE, 'link');
+    //   $message['subject'] = $params['subject']. ' is next!';
+    //   $message['body'][] = check_plain($params['message']);
+    //   break;
+  }
+}
+
+/**
+ * Implements hook_views_pre_render().
+ * header of panel head 用户只能看到自己所在Department下的my approval.
+ */
+function rate_pr_views_pre_render(&$view) {
+  if($view->name == 'purchase_request_list' && $view->current_display == 'pr_approval') {
+    global $user;
+    $except_roles = array('manager','principal','board');
+    $donext = TRUE;
+    foreach ($user->roles as $key => $role_name) {
+      if(in_array($role_name, $except_roles)) {
+        $donext = FALSE;
+        break;
+      }
+    }
+   if($donext)
+   foreach ($view->result as $key => $result) {
+      $department_nid = $result->field_field_parents_department[0]['raw']['target_id'];
+      if(!og_is_member('node', $department_nid)) {
+        unset($view->result[$key]);
+      }
+      //header变更，如果head没有group admin权限，views 不显示
+      $og_roles = og_get_user_roles('node', $department_nid);
+
+      if(!in_array('panel head', $og_roles) ) {
+          // $show_flag = FALSE;
+          // print $output;
+        unset($view->result[$key]);
+      }
+    }
+  }
+}

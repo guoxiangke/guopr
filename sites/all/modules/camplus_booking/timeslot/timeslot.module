@@ -1,0 +1,134 @@
+<?php
+/**
+ * timeslot.module
+ */
+
+/**
+ * Implements hook_init()
+ * Widget is needed for htabs
+ * @return [type] [description]
+ */
+function timeslot_init() {
+  drupal_add_library('system', 'ui.widget');
+  
+  $names = array();
+  $durations = array();
+  $values = array();
+  $accumulated = array(0);
+  $first_slot_start = '';
+  foreach (preg_split('/\n|\r/', variable_get('timeslots', ''), -1, PREG_SPLIT_NO_EMPTY) as $line => $value) {
+    list($range, $name) = explode('|', $value);
+    list($start, $end) = explode('-', $range);
+    if(empty($first_slot_start)) {
+      $first_slot_start = $start;
+    }
+    $durations[] = (strtotime($end) - strtotime($start))/60;
+    $names[] = substr($range, 0, 5). ' - ' .substr($range, 6, 5). ' ' .$name;
+    $values[] = $range;
+  }
+  list($hour, $min) = explode(':', $first_slot_start);
+  $durations[0] += $hour*60 + $min;
+  drupal_add_js(array('timeslot' => array(
+    'names' => $names,
+    'values' => $values,
+    'durations' => $durations,
+    )), 'setting');
+}
+
+/**
+ * Implements hook_form_alter on reservation node form
+ * Add timeslot related js
+ * @param  [type] $form        [description]
+ * @param  [type] $form_states [description]
+ * @return [type]              [description]
+ */
+function timeslot_form_reservation_node_form_alter(&$form, &$form_states) {
+  // kprint_r($form);
+  $form['#attached']['js'][] = drupal_get_path('module', 'timeslot') . '/timeslot.js';
+  $form['#attached']['js'][] = drupal_get_path('module', 'timeslot') . '/jquery-ui-multiselect-widget-master/src/jquery.multiselect.min.js';
+  $form['#attached']['css'] = array('http://ajax.googleapis.com/ajax/libs/jqueryui/1/themes/ui-lightness/jquery-ui.css' => array('type' => 'external'));
+  $form['#attached']['css'][] = drupal_get_path('module', 'timeslot'). '/jquery-ui-multiselect-widget-master/jquery.multiselect.css';
+  
+  $settings = array();
+  foreach (preg_split('/\n|\r/', variable_get('timeslots', ''), -1, PREG_SPLIT_NO_EMPTY) as $line => $value) {
+    list($range, $name) = explode('|', $value);
+    $settings[] = array(
+      'value' => $range,
+      'name' => substr($range, 0, 5). ' - ' .substr($range, 6, 5). ' ' .$name,
+    );
+  }
+
+  $form['#attached']['js'][] = array( 
+    'data' => array('timeslot' => $settings),
+    'type' => 'setting',
+  );
+}
+
+/**
+ * Implements hook_preprocess_form on reservation node form
+ * @param  [type] $vars [description]
+ * @return [type]       [description]
+ */
+function timeslot_preprocess_reservation_node_form(&$vars) {
+  drupal_add_library('system', 'ui.widget');
+}
+
+/**
+ * Implemtments hook_menu()
+ * Add timeslot settings page
+ * @return [type] [description]
+ */
+function timeslot_menu() {
+  $items['admin/config/regional/timeslot'] = array(
+    'title' => 'Timeslot settings',
+    'description' => "Settings for timeslot.",
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('timeslot_settings'),
+    'access arguments' => array('administer timeslot'),
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_permission
+ * @return [type] [description]
+ */
+function timeslot_permission() {
+  return array(
+    'administer timeslot' => array(
+      'title' => t('Administer timeslot'), 
+      'description' => t('Chaneg timeslots settings.'),
+    ),
+  );
+}
+
+/**
+ * Define timelslot settings form
+ * @return [type] [description]
+ */
+function timeslot_settings() {
+  $form['timeslots'] = array(
+    '#type' => 'textarea', 
+    '#title' => t('Timeslots'), 
+    '#description' => t('Format: HH:MM-HH:MM|Name<br />00:00-02:00|Section 1<br />02:00-02:10|Rest<br />17:00-17:20|Off'),
+    '#default_value' => variable_get('timeslots', ''), 
+    '#required' => TRUE,
+  );
+  $form['#validate'][] = 'timeslot_settings_validate';
+  return system_settings_form($form);
+}
+
+/**
+ * Validate timelslot settings form
+ * @param  [type] $form        [description]
+ * @param  [type] $form_states [description]
+ * @return [type]              [description]
+ */
+function timeslot_settings_validate($form, &$form_states) {
+  foreach (preg_split('/\n|\r/', $form_states['values']['timeslots'], -1, PREG_SPLIT_NO_EMPTY) as $line => $value) {
+    list($range, $name) = explode('|', $value);
+    if(!preg_match('/^[0-2][0-9]\:[0-5][0-9]-[0-2][0-9]\:[0-5][0-9]$/', trim($range))) {
+      form_set_error('timeslots', 'Incorrect time range entered in line: '.$value);
+    }
+  }
+}

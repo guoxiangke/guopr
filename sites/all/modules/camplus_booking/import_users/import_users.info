@@ -1,0 +1,13 @@
+name = Import Users
+core = 7.x
+package = Miscellaneous
+php = 5.2.4
+dependencies[] = ctools
+dependencies[] = features
+dependencies[] = feeds
+dependencies[] = text
+features[ctools][] = feeds:feeds_importer_default:1
+features[features_api][] = api:1
+features[feeds_importer][] = import_users
+features[field][] = user-user-field_name
+project path = sites/all/modules/custom

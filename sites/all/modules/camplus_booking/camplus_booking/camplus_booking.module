@@ -1,0 +1,64 @@
+<?php
+/**
+ * Implements hook_views_pre_render().
+ */
+function camplus_booking_views_pre_render(&$view) {
+	// dpm($view);
+	if($view->name == 'booking' && $view->current_display =='page_1') {
+		// dpm($view);
+		global $user;
+		foreach ($view->result as $key => $booking_node) {
+			if(is_array($booking_node->field_field_room))
+			foreach ($booking_node->field_field_room as $i => $room_node) {
+				if(isset($room_node['raw']['entity']->field_need_approval[LANGUAGE_NONE]) && isset($room_node['raw']['entity']->field_approver[LANGUAGE_NONE][0]['target_id']) && $room_node['raw']['entity']->field_need_approval[LANGUAGE_NONE][0]['value'] 
+					&& $room_node['raw']['entity']->field_approver[LANGUAGE_NONE][0]['target_id'] != $user->uid) { 
+					unset($view->result[$key]);
+				}
+			}
+			if(is_array($booking_node->field_field_resource))
+			foreach ($booking_node->field_field_resource as $key => $resource_node) {
+				// if($resource_node['raw']['entity'])
+				if(isset($resource_node['raw']['entity']->field_need_approval[LANGUAGE_NONE]) && isset($resource_node['raw']['entity']->field_approver[LANGUAGE_NONE][0]['target_id']) && $resource_node['raw']['entity']->field_need_approval[LANGUAGE_NONE][0]['value'] 
+					&& $resource_node['raw']['entity']->field_approver[LANGUAGE_NONE][0]['target_id'] != $user->uid) { 
+					unset($view->result[$key]);
+				}
+			}
+		}
+	}
+	
+}
+
+
+// This function adds a '+' next to each datebox with a link to the event node creation page,
+// if the current user has permission to create events.
+// Replace 'mymodule' with the name of your module.
+// Replace 'event' with the name of your CCK content type.
+function camplus_booking_preprocess_calendar_datebox(&$vars) {
+  global $user;
+  // dpm($vars);
+  if(strtotime($vars['date'] ) >= time()-24*3600)
+  if (user_access('create reservation content', $user)) {
+    $vars['add_event_link'] = l('+', 'node/add/reservation/' . $vars['date'], array('attributes' => array('title' => 'Add a booking','class'=>array('ico-plus'))));
+  }
+}
+// This function prepopulates the time field when the event is created.
+// Replace 'mymodule' with the name of your module.
+// Replace 'event' with the name of your CCK content type.
+// Replace 'time' with the name of your date field.
+function camplus_booking_form_alter(&$form, $form_state, $form_id) {
+ if ($form_id == 'reservation_node_form' && arg(3) != '') {
+ 	// dpm($form);
+       $form['field_date'][LANGUAGE_NONE][0]['#default_value']['value'] = arg(3) . ' 12:00:00';
+     	 $form['field_date'][LANGUAGE_NONE][0]['#default_value']['value2'] = arg(3) . ' 13:00:00';
+    }
+}
+
+/**
+ * Implements hook_init().
+ */
+function camplus_booking_init() {
+  /*
+   *drupal_add_css(drupal_get_path('module', 'book') . '/book.css');
+   */
+  drupal_add_js(drupal_get_path('module', 'camplus_booking').'/camplus_booking.js');
+}

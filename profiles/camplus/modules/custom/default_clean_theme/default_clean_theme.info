@@ -1,0 +1,17 @@
+name = Default Clean Theme
+core = 7.x
+package = Camplus
+version = 7.x-1.0-dev1
+project = default_clean_theme
+dependencies[] = ctools
+dependencies[] = features
+dependencies[] = strongarm
+dependencies[] = textsize
+features[ctools][] = strongarm:strongarm:1
+features[features_api][] = api:2
+features[user_permission][] = access textsize content
+features[variable][] = textsize_block_type
+features[variable][] = textsize_display_current_inline
+features[variable][] = textsize_display_current_text_value
+features[variable][] = textsize_display_list_inline
+features[variable][] = theme_clean_theme_settings

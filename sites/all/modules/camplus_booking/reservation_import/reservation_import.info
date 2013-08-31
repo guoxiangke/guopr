@@ -1,0 +1,12 @@
+name = Reservation Import
+core = 7.x
+package = Camplus Booking
+version = 7.x-1.0
+project = reservation_import
+dependencies[] = ctools
+dependencies[] = feeds
+dependencies[] = reservation_content_type
+features[ctools][] = feeds:feeds_importer_default:1
+features[features_api][] = api:2
+features[feeds_importer][] = import_resources
+project path = sites/all/modules/camplus_booking

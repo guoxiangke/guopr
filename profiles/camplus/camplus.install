@@ -1,0 +1,170 @@
+<?php
+/**
+ * Implements hook_install().
+ *
+ * Perform actions to set up the site for this profile.
+ */
+function camplus_install() {
+// Add text formats.
+  $full_format = array(
+    'format' => 'full_content',
+    'name' => 'Full Format',
+    'weight' => 1,
+    'filters' => array(
+      // URL filter.
+      'filter_url' => array(
+        'weight' => 0,
+        'status' => 1,
+      ),
+      // Line break filter.
+      'filter_autop' => array(
+        'weight' => 1,
+        'status' => 1,
+      ),
+      // HTML corrector filter.
+      'filter_htmlcorrector' => array(
+        'weight' => 10,
+        'status' => 1,
+      ),
+    ),
+  );
+  $full_format = (object) $full_format;
+  filter_format_save($full_format);
+
+  //Set default theme.
+   db_update('system')
+    ->fields(array('status' => 1))
+    ->condition('type', 'theme')
+    ->condition('name', 'clean_theme')
+    ->execute();
+  variable_set('theme_default', 'clean_theme');
+
+
+// Disable the default Bartik theme
+  theme_disable(array('bartik'));
+
+  // Enable some standard blocks.
+  $default_theme = variable_get('theme_default', 'clean_theme');
+  $values = array(
+    array(
+      'module' => 'system',
+      'delta' => 'main',
+      'theme' => $default_theme,
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'content',
+      'pages' => '',
+      'cache' => -1,
+    ),
+     array(
+      'module' => 'system',
+      'delta' => 'user-menu',
+      'theme' => $default_theme,
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'user_menu',
+      'pages' => '',
+      'cache' => -1,
+    ),
+    array(
+      'module' => 'textsize',
+      'delta' => 'form',
+      'theme' => $default_theme,
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'text_resize',
+      'pages' => '',
+      'cache' => -1,
+    ),
+    array(
+      'module' => 'locale',
+      'delta' => 'language',
+      'theme' => $default_theme,
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'language',
+      'pages' => '',
+      'cache' => -1,
+    ),   
+    array(
+      'module' => 'user',
+      'delta' => 'login',
+      'theme' => $default_theme,
+      'status' => 1,
+      'weight' => 0,
+      'region' => 'sidebar_first',
+      'pages' => '',
+      'cache' => -1,
+    ),
+  );
+  $query = db_insert('block')->fields(array('module', 'delta', 'theme', 'status', 'weight', 'region', 'pages', 'cache'));
+  foreach ($values as $record) {
+    $query->values($record);
+  }
+  $query->execute();
+
+  // Set registration to administrator only.
+  variable_set('user_register', USER_REGISTER_ADMINISTRATORS_ONLY);
+  
+  // Enable default permissions for system roles.
+  $full_permission = filter_permission_name($full_format);
+  user_role_grant_permissions(DRUPAL_AUTHENTICATED_RID, array('access content', 'access comments', 'post comments', 'skip comment approval', 'access overlay', 'access user profiles', 'edit own comments', 'view own unpublished content', 'view the administration theme', $full_permission));
+
+
+// Create school-based roles.
+
+// Create a role for Students.
+$sch_role = new stdClass();
+$sch_role->name = 'student';
+$sch_role->weight = 3;
+$sch_role->machine_name = 'student';
+user_role_save($sch_role);
+
+// Create a role for Parents.
+$sch_role = new stdClass();
+$sch_role->name = 'parent';
+$sch_role->weight = 4;
+$sch_role->machine_name = 'parent';
+user_role_save($sch_role);
+
+// Create a role for Teachers.
+$sch_role = new stdClass();
+$sch_role->name = 'teacher';
+$sch_role->weight = 5;
+$sch_role->machine_name = 'teacher';
+user_role_save($sch_role);
+
+// Create a role for Staff.
+$sch_role = new stdClass();
+$sch_role->name = 'staff';
+$sch_role->weight = 6;
+$sch_role->machine_name = 'staff';
+user_role_save($sch_role);
+
+// Create a role for Principal.
+$sch_role = new stdClass();
+$sch_role->name = 'principal';
+$sch_role->weight = 7;
+$sch_role->machine_name = 'principal';
+user_role_save($sch_role);
+
+// Create a role for School System Managers.
+$sch_role = new stdClass();
+$sch_role->name = 'school admin';
+$sch_role->weight = 8;
+$sch_role->machine_name = 'school_admin';
+user_role_save($sch_role);
+
+  // Update the menu router information.
+  menu_rebuild();
+  // revert features to ensure they are all installed
+  $features = array(
+    'camplus_default',
+    'default_clean_theme'
+  );
+  features_revert($features);
+  // ignore any rebuild messages
+  node_access_needs_rebuild(FALSE);
+  // ignore any other install messages
+  drupal_get_messages();
+}

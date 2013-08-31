@@ -1,0 +1,52 @@
+<?php
+/**
+ * @file
+ * Code for the Reservation workflow feature.
+ */
+
+include_once 'reservation_workflow.features.inc';
+
+function reservation_workflow_rules_action_info() {
+  return array(
+    'reservation_workflow_skip_approval' => array(
+      'group' => t('Workflow'),
+      'label' => t('Skip Approval process if no approval is needed'),
+      'parameter' => array(
+        'node' => array(
+          'type' => 'node',
+          'label' => t('Node'),
+          'description' => t('The node to set the current workflow state of.'),
+          'save' => TRUE,
+        ),
+      ),
+    ),
+  );
+}
+
+function reservation_workflow_skip_approval($node) {
+  
+  if(isset($node->field_resource['und'])) {
+    foreach ($node->field_resource['und'] as $key => $nid) {
+      if(!empty($nid['target_id'])) {
+        $resource_node = entity_load_single('node', $nid['target_id']);
+        if($resource_node->field_need_approval['und'][0]['value']) {
+          return;
+        }
+      }
+    }
+  }
+  
+  if(isset($node->field_room['und'])) {
+    foreach ($node->field_room['und'] as $key => $nid) {
+      if(!empty($nid['target_id']))
+        $resource_node = entity_load_single('node', $nid['target_id']);
+        if(isset($resource_node->field_need_approval[LANGUAGE_NONE]) && $resource_node->field_need_approval[LANGUAGE_NONE][0]['value']) {
+          return;
+        }
+    }
+  }
+  
+  // dsm($node);
+  $sid = 3;
+  workflow_transition($node, $sid);
+}

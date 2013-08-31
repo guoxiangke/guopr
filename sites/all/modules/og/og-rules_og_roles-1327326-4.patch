@@ -1,0 +1,208 @@
+From 240380a059120c36cddac31342b78988a2766c82 Mon Sep 17 00:00:00 2001
+From: Jesse Hofmann-Smith <jesse@opensourcery.com>
+Date: Fri, 16 Aug 2013 17:05:33 -0700
+Subject: [PATCH] Issue #1327326 by othermachines, mrfelton, ioskevich et al:
+ Added Rules condition and actions related to OG group roles.
+
+---
+ og.rules.inc |  153 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 files changed, 151 insertions(+), 2 deletions(-)
+
+diff --git a/og.rules.inc b/og.rules.inc
+index ccfa6e3..7d7a658 100644
+--- a/og.rules.inc
++++ b/og.rules.inc
+@@ -41,8 +41,8 @@ function og_rules_event_info() {
+     'og_user_delete' => $defaults + array(
+       'label' => t('User has been removed from group'),
+       'help' => t("A user has been removed from group and is no longer a group member."),
+-   ),
+- );
++    ),
++  );
+ }
+ 
+ /**
+@@ -199,10 +199,109 @@ function og_rules_action_info() {
+     'access callback' => 'og_rules_integration_access',
+   );
+ 
++  $items['og_grant_og_role'] = array(
++    'label' => 'Grant OG role',
++    'group' => 'Organic groups',
++    'parameter' => array(
++      'account' => array(
++        'type' => 'user',
++        'label' => t('User'),
++        'description' => t('The user who will be granted this role.'),
++        'wrapped' => TRUE,
++      ),
++      'group' => array(
++        'type' => array_keys(og_get_all_group_entity()),
++        'label' => t('Group'),
++        'wrapped' => TRUE,
++      ),
++      'roles' => array(
++        'type' => 'list<integer>',
++        'label' => t('Group roles'),
++        'description' => t('Default roles will not be granted if they are being overridden in the group\'s settings.'),
++        'options list' => 'og_rules_group_roles_options_list',
++        'restriction' => 'input',
++      ),
++    ),
++    'base' => 'og_rules_grant_og_role',
++    'access callback' => 'og_rules_integration_access',
++  );
++
++  $items['og_revoke_og_role'] = array(
++    'label' => 'Revoke OG role',
++    'group' => 'Organic groups',
++    'parameter' => array(
++      'account' => array(
++        'type' => 'user',
++        'label' => t('User'),
++        'description' => t('The user who will have the role revoked.'),
++        'wrapped' => TRUE,
++      ),
++      'group' => array(
++        'type' => array_keys(og_get_all_group_entity()),
++        'label' => t('Group'),
++        'wrapped' => TRUE,
++      ),
++      'roles' => array(
++        'type' => 'list<integer>',
++        'label' => t('Group roles'),
++        'options list' => 'og_rules_group_roles_options_list',
++        'restriction' => 'input',
++      ),
++    ),
++    'base' => 'og_rules_revoke_og_role',
++    'access callback' => 'og_rules_integration_access',
++  );
++
+   return $items;
+ }
+ 
+ /**
++ * Options list callback for group roles.
++ *
++ * Note: Not all roles will be compatible with the group entity being
++ * evaluated. For instance, a role that is part of a default set will not
++ * be granted if the group being evaluated has its default roles and
++ * permissions overridden. Our options list will include the bundle name
++ * and, in cases where default roles are being overridden for a group
++ * entity, the entity's id. It will be up to the administrator to use
++ * this information to select the correct role.
++ */
++function og_rules_group_roles_options_list($element) {
++
++  $og_roles = array();
++
++  foreach (og_get_all_group_bundle() as $group_type => $bundles) {
++    foreach ($bundles as $bundle => $label) {
++
++      $query = db_select('og_role', 'ogr')
++        ->distinct()
++        ->fields('ogr', array('gid', 'group_type'))
++        ->condition('group_bundle', $bundle, '=')
++        ->orderBy('gid', 'ASC');
++
++      $result = $query->execute();
++      while ($row = $result->fetchAssoc()) {
++
++        $label_append = $row['gid'] ? $row['group_type'] . ':' . $row['gid'] : t('Defaults');
++
++        $roles = array();
++        $bundle_roles = og_roles($group_type, $bundle, $row['gid']);
++        foreach ($bundle_roles as $rid => $name) {
++          // Don't return anonymous and authenticated member roles.
++          if (!in_array($name, array(OG_ANONYMOUS_ROLE, OG_AUTHENTICATED_ROLE))) {
++            $roles[$rid] = $name;
++          }
++        }
++        if (!empty($roles)) {
++          $og_roles[$label . ' (' . $label_append . ')'] = $roles;
++        }
++      }
++    }
++  }
++  return $og_roles;
++}
++
++/**
+  * Action: Get group members from a group content.
+  */
+ function og_rules_get_members($group_content) {
+@@ -293,6 +392,24 @@ function og_rules_remove_entity_from_group(EntityDrupalWrapper $entity, EntityDr
+ }
+ 
+ /**
++ * Action: Grant OG role.
++ */
++function og_rules_grant_og_role(EntityDrupalWrapper $account, EntityDrupalWrapper $group, $roles) {
++  foreach ($roles as $rid) {
++    og_role_grant($group->type(), $group->getIdentifier(), $account->getIdentifier(), $rid);
++  }
++}
++
++/**
++ * Action: Revoke OG role.
++ */
++function og_rules_revoke_og_role(EntityDrupalWrapper $account, EntityDrupalWrapper $group, $roles) {
++  foreach ($roles as $rid) {
++    og_role_revoke($group->type(), $group->getIdentifier(), $account->getIdentifier(), $rid);
++  }
++}
++
++/**
+  * OG Rules integration access callback.
+  */
+ function og_rules_integration_access($type, $name) {
+@@ -404,6 +521,30 @@ function og_rules_condition_info() {
+     'base' => 'og_rules_entity_is_group_content',
+     'access callback' => 'og_rules_integration_access',
+   );
++  $items['og_user_has_role'] = array(
++    'label' => t('User has group role'),
++    'group' => t('Organic groups'),
++    'parameter' => array(
++      'account' => array(
++        'type' => 'user',
++        'label' => t('User'),
++        'wrapped' => TRUE,
++      ),
++      'group' => array(
++        'type' => array_keys(og_get_all_group_entity()),
++        'label' => t('Group'),
++        'wrapped' => TRUE,
++      ),
++      'roles' => array(
++        'type' => 'list<integer>',
++        'label' => t('Group roles'),
++        'options list' => 'og_rules_group_roles_options_list',
++        'restriction' => 'input',
++      ),
++    ),
++    'base' => 'og_rules_condition_user_has_role',
++    'access callback' => 'og_rules_integration_access',
++  );
+   return $items;
+ }
+ 
+@@ -477,5 +618,13 @@ function og_rules_entity_is_group_content_help() {
+ }
+ 
+ /**
++ * Condition: User has group role.
++ */
++function og_rules_condition_user_has_role(EntityDrupalWrapper $account, EntityDrupalWrapper $group, $roles) {
++  $user_roles = og_get_user_roles($group->type(), $group->getIdentifier(), $account->getIdentifier());
++  return !array_diff_key($roles, $user_roles);
++}
++
++/**
+  * @}
+  */
+-- 
+1.7.5.4
+

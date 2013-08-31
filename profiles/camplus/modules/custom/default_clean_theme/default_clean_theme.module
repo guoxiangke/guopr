@@ -1,0 +1,7 @@
+<?php
+/**
+ * @file
+ * Code for the Default Clean Theme feature.
+ */
+
+include_once 'default_clean_theme.features.inc';
