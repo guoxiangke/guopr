@@ -430,6 +430,8 @@ function camplus_pr_form_alter(&$form, &$form_state, $form_id) {
     $form['field_voucher_no']['#access'] = FALSE;
     $form['og_group_ref']['#access'] = FALSE;
     $form['field_pr_reference']['#access'] = FALSE;
+    $form['field_pr_rid_after']['#access'] = FALSE;
+    $form['field_pr_role_involved']['#access'] = FALSE;
 
   }
   //if not open mixable key, == not Enable Budget Pool, hide the field
