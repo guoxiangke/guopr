@@ -71,8 +71,10 @@ function _rate_pr_check_permissions($node, $widget, $user = NULL) {
   global $debug;
   $approve_status['flags'] = flag_get_counts('node', $node->nid, $reset = FALSE);
   $approve_status['workflow_status'] = '';
+  $approve_status['permit_flag'] = '';
   //确定角色和第几级审批设定
   //如果当前用户角色不在审核范围当中，返回false
+
   {
     //确定角色 begin
     $camplus_pr_approvable_role_involved = array_keys(variable_get('camplus_pr_approvable_role_involved'));
@@ -94,7 +96,7 @@ function _rate_pr_check_permissions($node, $widget, $user = NULL) {
       //用户角色不在审核流程中，即无权限，返回false
       $approve_status['permit_flag'] = $flag_role_involved; //false
       // dpm($approve_status,'$approve_statu');
-      // return $approve_status;
+      return $approve_status;
     }
     //确定角色 end 
 
@@ -121,7 +123,11 @@ function _rate_pr_check_permissions($node, $widget, $user = NULL) {
     // if($debug) dpm($approve_rang,'approve_rang');
     $workflow_settings = $workflow_settings[$approve_rang];
     // if($debug) dpm($workflow_settings,'workflow_settings');
+    global $user;
+    $temp_rate_result = $GLOBALS['temp_rate_result'.$user->uid];
+    if(!$temp_rate_result)
     $rate_results = rate_get_results('node', $node->nid, $widget->id);
+
     if($rate_results['options']['-1']) {   //attention -1,can not change.
     //即有人选择reject，审核不通过
       $approve_status['workflow_status'] = 'reject';

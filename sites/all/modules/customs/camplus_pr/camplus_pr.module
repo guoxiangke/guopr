@@ -858,6 +858,8 @@ function camplus_pr_admin_paths_alter(&$paths) {
  */
 function camplus_pr_init() {
   $GLOBALS['debug'] = FALSE;
+  global $user;
+  $GLOBALS['temp_rate_result'.$user->uid] = FALSE;
   $public_groups = druedu_user_get_nodes_by_group('school_department');
   $variables = array();
   foreach ($public_groups as $g_nid => $g_node) {
