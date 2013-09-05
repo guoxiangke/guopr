@@ -16,7 +16,7 @@ function rate_pr_node_view($node, $view_mode, $langcode) {
     }
     //header变更，如果head没有group admin权限，不可以rate
     global $user;
-    if(in_array('head', $user->roles)) {
+    if(in_array('panel_head', $user->roles)) {
       $BI_nid = $node->field_budget_items[LANGUAGE_NONE][0]['target_id'];
       $department_nid = node_load($BI_nid)->field_parents_department[LANGUAGE_NONE][0]['target_id'];
       $og_roles = og_get_user_roles($group_type='node', $gid=$department_nid, $uid = NULL, $include = FALSE);
