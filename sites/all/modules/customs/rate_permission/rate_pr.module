@@ -124,8 +124,6 @@ function _rate_pr_check_permissions($node, $widget, $user = NULL) {
     $workflow_settings = $workflow_settings[$approve_rang];
     // if($debug) dpm($workflow_settings,'workflow_settings');
     global $user;
-    $temp_rate_result = $GLOBALS['temp_rate_result'.$user->uid];
-    if(!$temp_rate_result)
     $rate_results = rate_get_results('node', $node->nid, $widget->id);
 
     if($rate_results['options']['-1']) {   //attention -1,can not change.
